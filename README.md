@@ -41,13 +41,12 @@ Para respetar el rigor documental de los archivos históricos, el sistema **pres
 
 ## 🎥 Demo en Video (5 Minutos)
 
-- **Enlace a la Video-Demo:** `[LINK_A_TU_VIDEO_EN_YOUTUBE_O_DRIVE]` *(Reemplazar aquí con el enlace al video de 5 minutos)*.
+- **Enlace a la Video-Demo:** `[https://drive.google.com/file/d/1SskzpMi4gFxG1SpCONxkG055IayAFlog/view?usp=drive_link]`.
 - **Contenido del Video:**
   1. Presentación de Elena y el dilema del archivo barrial.
   2. Demostración en vivo del flujo completo (carga de foto dañada, remoción de arrugas y realce por difusión).
   3. Demostración de la preservación de identidad facial (sin deformación de rasgos).
   4. Análisis visual del mapa de calor de diferencias y reporte del modelo VLM.
-  5. Reflexión final sobre la escalera de la confianza: Real, Creíble y Verificable.
 
 ---
 
