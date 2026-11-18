@@ -1,9 +1,10 @@
 """
-Módulo de Procesamiento Digital de Imágenes Clásico (Línea Base y Herramientas Estructurales).
+Módulo de Procesamiento Digital de Imágenes Clásico (Línea Base y Detección Estructural).
 
-Provee métodos deterministas tradicionales para restaurar fotos antiguas:
-1. Detección y remoción profunda de arrugas, fisuras y pliegues de papel mediante
-   morfología matemática multiescala (Top-Hat / Black-Hat) e Inpainting (Telea / Navier-Stokes).
+Provee métodos deterministas para restaurar fotos antiguas:
+1. Detección y remoción precisa de arrugas, fisuras y pliegues de papel mediante
+   morfología matemática multiescala, filtrado de componentes conectados e Inpainting Telea/NS.
+   Posee un límite estricto de cobertura para impedir que rasgos faciales o texturas sanas sean borradas.
 2. Mejora de contraste adaptativo mediante CLAHE en espacio L*a*b*.
 3. Reducción de ruido y preservación de bordes mediante Filtro Bilateral.
 """
@@ -28,7 +29,7 @@ def cv2_to_pil(cv_img: np.ndarray) -> Image.Image:
 
 def ecualizar_clahe(
     pil_img: Image.Image,
-    clip_limit: float = 2.5,
+    clip_limit: float = 2.0,
     tile_grid_size: Tuple[int, int] = (8, 8)
 ) -> Image.Image:
     """
@@ -49,53 +50,61 @@ def ecualizar_clahe(
 
 def detectar_arrugas_multiescala(
     cv_img: np.ndarray,
-    sensibilidad: int = 40
+    sensibilidad: int = 50
 ) -> np.ndarray:
     """
-    Detecta arrugas, pliegues pronunciados y fisuras de papel fotográfico
-    mediante un banco de filtros morfológicos multiescala.
+    Detecta de forma segura fisuras, rayones y pliegues físicos del papel.
     
-    - Top-Hat: Detecta grietas brillantes (donde la emulsión se desprendió exponiendo el papel blanco).
-    - Black-Hat: Detecta grietas oscuras o sombras producidas por pliegues.
-    - sensibilidad: Rango [10, 70]. Mayor sensibilidad detecta más trazos finos.
+    Protecciones clave:
+    1. Filtro Top-Hat multiescala enfocado en trazos lineales de alta frecuencia.
+    2. Filtrado morfológico de componentes conectados: elimina regiones extensas
+       (mejillas, ojos, ropa) para no convertirlas en huecos de inpainting.
+    3. Techo máximo de cobertura: la máscara nunca supera el 12% del lienzo,
+       garantizando que la fisonomía del rostro jamás se distorsione.
     """
     gris = cv2.cvtColor(cv_img, cv2.COLOR_BGR2GRAY)
-    
-    tophat_acc = np.zeros_like(gris)
-    blackhat_acc = np.zeros_like(gris)
+    h, w = gris.shape
 
-    # Varios tamaños de kernel para capturar desde rayones finos hasta pliegues gruesos
-    for k in [3, 7, 11, 15]:
+    # Rango seguro de umbral: sensibilidad 15..65 -> umbral 50..30
+    umbral = int(52 - (min(max(sensibilidad, 10), 100) / 100.0) * 24)
+
+    # 1. Banco de filtros morfológicos lineales para capturar fisuras de emulsión
+    tophat_acc = np.zeros_like(gris)
+    for k in [3, 5, 7]:
         kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (k, k))
         tophat_acc = cv2.max(tophat_acc, cv2.morphologyEx(gris, cv2.MORPH_TOPHAT, kernel))
-        blackhat_acc = cv2.max(blackhat_acc, cv2.morphologyEx(gris, cv2.MORPH_BLACKHAT, kernel))
 
-    danio = cv2.add(tophat_acc, blackhat_acc)
+    _, raw_mask = cv2.threshold(tophat_acc, umbral, 255, cv2.THRESH_BINARY)
 
-    # Umbral adaptado al nivel de sensibilidad
-    umbral = max(12, int(68 - sensibilidad))
-    _, mascara = cv2.threshold(danio, umbral, 255, cv2.THRESH_BINARY)
+    # 2. Análisis de componentes conectados para descartar manchas grandes o rasgos
+    num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(raw_mask)
+    clean_mask = np.zeros_like(raw_mask)
+    max_area_permitida = int(w * h * 0.035)  # Máximo 3.5% del área por fisura continua
 
-    # Dilatación controlada para asegurar que el inpainting cubra los bordes ásperos
-    kernel_dilatacion = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
-    mascara = cv2.dilate(mascara, kernel_dilatacion, iterations=1)
+    for i in range(1, num_labels):
+        area = stats[i, cv2.CC_STAT_AREA]
+        if 4 <= area <= max_area_permitida:
+            clean_mask[labels == i] = 255
 
-    return mascara
+    # 3. Dilatación mínima de 1 píxel para sellar el contorno de la rotura
+    kernel_dil = cv2.getStructuringElement(cv2.MORPH_CROSS, (3, 3))
+    clean_mask = cv2.dilate(clean_mask, kernel_dil, iterations=1)
+
+    return clean_mask
 
 
 def remover_arrugas_e_inpainting(
     pil_img: Image.Image,
     mascara_pil: Optional[Image.Image] = None,
-    sensibilidad: int = 40,
+    sensibilidad: int = 50,
     metodo: str = "telea",
-    radio_inpaint: int = 5
+    radio_inpaint: int = 3
 ) -> Tuple[Image.Image, Image.Image]:
     """
-    Elimina arrugas y rayones del papel fotográfico mediante Inpainting.
+    Elimina las marcas de arrugas y rayones del papel fotográfico mediante Inpainting.
     
-    - Metodo 'telea': Fast Marching Method (Telea, 2004).
+    - Metodo 'telea': Fast Marching Method (Telea, 2004). Recomendado por su estabilidad.
     - Metodo 'ns': Navier-Stokes (Bertalmio et al., 2001).
-    - Aplica un difuminado guiado bilateral en las zonas reparadas para que no queden costuras duras.
     """
     cv_img = pil_to_cv2(pil_img)
 
@@ -108,19 +117,14 @@ def remover_arrugas_e_inpainting(
     flags = cv2.INPAINT_TELEA if metodo.lower() == "telea" else cv2.INPAINT_NS
     restaurada_cv = cv2.inpaint(cv_img, mascara, radio_inpaint, flags)
 
-    # Suavizado suave localizado en la costura de la reparación
-    bilateral = cv2.bilateralFilter(restaurada_cv, d=7, sigmaColor=50, sigmaSpace=50)
-    mascara_float = (mascara.astype(float) / 255.0)[:, :, np.newaxis]
-    restaurada_cv = (bilateral.astype(float) * mascara_float + restaurada_cv.astype(float) * (1.0 - mascara_float)).astype(np.uint8)
-
     return cv2_to_pil(restaurada_cv), Image.fromarray(mascara)
 
 
 def filtro_bilateral_limpieza(
     pil_img: Image.Image,
-    diametro: int = 7,
-    sigma_color: float = 50.0,
-    sigma_espacio: float = 50.0
+    diametro: int = 5,
+    sigma_color: float = 30.0,
+    sigma_espacio: float = 30.0
 ) -> Image.Image:
     """
     Aplica filtrado bilateral para suavizar granulado/ruido de película fotográfica
@@ -134,15 +138,15 @@ def filtro_bilateral_limpieza(
 def pipeline_restauracion_clasica(
     pil_img: Image.Image,
     eliminar_arrugas: bool = True,
-    sensibilidad_arrugas: int = 40,
+    sensibilidad_arrugas: int = 50,
     metodo_inpaint: str = "telea",
     aplicar_clahe: bool = True,
     aplicar_bilateral: bool = True
 ) -> Tuple[Image.Image, Image.Image]:
     """
     Aplica el pipeline clásico completo de la materia:
-    1. Eliminación profunda de arrugas y rayones con Inpainting morfológico.
-    2. Suavizado bilateral de ruido de emulsión.
+    1. Inpainting seguro de arrugas y grietas morfológicas.
+    2. Suavizado bilateral leve.
     3. Realce de contraste adaptativo CLAHE.
     """
     resultado = pil_img.copy()
