@@ -1,9 +1,10 @@
 """
-Módulo de Procesamiento Digital de Imágenes Clásico (Línea Base).
+Módulo de Procesamiento Digital de Imágenes Clásico (Línea Base y Herramientas Estructurales).
 
-Provee métodos deterministas tradicionales para comparar contra modelos generativos:
-1. Mejora de contraste adaptativo mediante CLAHE en espacio L*a*b*.
-2. Detección automática y restauración de rayones con Inpainting clásico (Telea / Navier-Stokes).
+Provee métodos deterministas tradicionales para restaurar fotos antiguas:
+1. Detección y remoción profunda de arrugas, fisuras y pliegues de papel mediante
+   morfología matemática multiescala (Top-Hat / Black-Hat) e Inpainting (Telea / Navier-Stokes).
+2. Mejora de contraste adaptativo mediante CLAHE en espacio L*a*b*.
 3. Reducción de ruido y preservación de bordes mediante Filtro Bilateral.
 """
 
@@ -33,7 +34,6 @@ def ecualizar_clahe(
     """
     Aplica CLAHE (Contrast Limited Adaptive Histogram Equalization).
     Trabaja sobre el canal L* en el espacio L*a*b* para no alterar el balance cromático original.
-    Ideal para recuperar detalles en fotos históricas desvanecidas o subexpuestas.
     """
     cv_img = pil_to_cv2(pil_img)
     lab = cv2.cvtColor(cv_img, cv2.COLOR_BGR2LAB)
@@ -47,64 +47,71 @@ def ecualizar_clahe(
     return cv2_to_pil(bgr_resultado)
 
 
-def detectar_rayones_morfologia(
+def detectar_arrugas_multiescala(
     cv_img: np.ndarray,
-    kernel_size: int = 5,
-    umbral: int = 35
+    sensibilidad: int = 40
 ) -> np.ndarray:
     """
-    Detecta rayones finos y grietas utilizando transformaciones morfológicas (Black-Hat).
-    Devuelve una máscara binaria de 8 bits donde 255 indica daño detectado.
+    Detecta arrugas, pliegues pronunciados y fisuras de papel fotográfico
+    mediante un banco de filtros morfológicos multiescala.
+    
+    - Top-Hat: Detecta grietas brillantes (donde la emulsión se desprendió exponiendo el papel blanco).
+    - Black-Hat: Detecta grietas oscuras o sombras producidas por pliegues.
+    - sensibilidad: Rango [10, 70]. Mayor sensibilidad detecta más trazos finos.
     """
     gris = cv2.cvtColor(cv_img, cv2.COLOR_BGR2GRAY)
     
-    # Kernel en cruz/elipse para capturar trazos de rayones en varias direcciones
-    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (kernel_size, kernel_size))
-    
-    # Black Hat: Resalta elementos oscuros sobre fondo claro (grietas típicas)
-    blackhat = cv2.morphologyEx(gris, cv2.MORPH_BLACKHAT, kernel)
-    
-    # Top Hat: Resalta elementos claros sobre fondo oscuro (rayones reflectantes)
-    tophat = cv2.morphologyEx(gris, cv2.MORPH_TOPHAT, kernel)
-    
-    # Unión de candidatos a daño
-    danio = cv2.add(blackhat, tophat)
-    
-    # Umbralizado para obtener máscara binaria limpia
+    tophat_acc = np.zeros_like(gris)
+    blackhat_acc = np.zeros_like(gris)
+
+    # Varios tamaños de kernel para capturar desde rayones finos hasta pliegues gruesos
+    for k in [3, 7, 11, 15]:
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (k, k))
+        tophat_acc = cv2.max(tophat_acc, cv2.morphologyEx(gris, cv2.MORPH_TOPHAT, kernel))
+        blackhat_acc = cv2.max(blackhat_acc, cv2.morphologyEx(gris, cv2.MORPH_BLACKHAT, kernel))
+
+    danio = cv2.add(tophat_acc, blackhat_acc)
+
+    # Umbral adaptado al nivel de sensibilidad
+    umbral = max(12, int(68 - sensibilidad))
     _, mascara = cv2.threshold(danio, umbral, 255, cv2.THRESH_BINARY)
-    
-    # Dilatación leve para cubrir bien los bordes del rayón
-    kernel_dilatacion = cv2.getStructuringElement(cv2.MORPH_CROSS, (3, 3))
+
+    # Dilatación controlada para asegurar que el inpainting cubra los bordes ásperos
+    kernel_dilatacion = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
     mascara = cv2.dilate(mascara, kernel_dilatacion, iterations=1)
-    
+
     return mascara
 
 
-def inpainting_clasico(
+def remover_arrugas_e_inpainting(
     pil_img: Image.Image,
     mascara_pil: Optional[Image.Image] = None,
+    sensibilidad: int = 40,
     metodo: str = "telea",
-    radio_inpaint: int = 3
+    radio_inpaint: int = 5
 ) -> Tuple[Image.Image, Image.Image]:
     """
-    Restaura zonas dañadas utilizando algoritmos clásicos de inpainting de OpenCV.
-    - Metodo 'telea': Algoritmo basado en método de marcha rápida (Fast Marching Method, Alexandru Telea 2004).
-    - Metodo 'ns': Algoritmo basado en Navier-Stokes y fluidodinámica (Bertalmio et al. 2001).
+    Elimina arrugas y rayones del papel fotográfico mediante Inpainting.
     
-    Retorna la imagen restaurada y la máscara de daño utilizada.
+    - Metodo 'telea': Fast Marching Method (Telea, 2004).
+    - Metodo 'ns': Navier-Stokes (Bertalmio et al., 2001).
+    - Aplica un difuminado guiado bilateral en las zonas reparadas para que no queden costuras duras.
     """
     cv_img = pil_to_cv2(pil_img)
 
     if mascara_pil is not None:
         mascara = np.array(mascara_pil.convert("L"))
-        # Binarizar por si la máscara tiene valores intermedios
         _, mascara = cv2.threshold(mascara, 127, 255, cv2.THRESH_BINARY)
     else:
-        # Detección morfológica automática si el usuario no aportó máscara manual
-        mascara = detectar_rayones_morfologia(cv_img)
+        mascara = detectar_arrugas_multiescala(cv_img, sensibilidad=sensibilidad)
 
     flags = cv2.INPAINT_TELEA if metodo.lower() == "telea" else cv2.INPAINT_NS
     restaurada_cv = cv2.inpaint(cv_img, mascara, radio_inpaint, flags)
+
+    # Suavizado suave localizado en la costura de la reparación
+    bilateral = cv2.bilateralFilter(restaurada_cv, d=7, sigmaColor=50, sigmaSpace=50)
+    mascara_float = (mascara.astype(float) / 255.0)[:, :, np.newaxis]
+    restaurada_cv = (bilateral.astype(float) * mascara_float + restaurada_cv.astype(float) * (1.0 - mascara_float)).astype(np.uint8)
 
     return cv2_to_pil(restaurada_cv), Image.fromarray(mascara)
 
@@ -126,24 +133,30 @@ def filtro_bilateral_limpieza(
 
 def pipeline_restauracion_clasica(
     pil_img: Image.Image,
+    eliminar_arrugas: bool = True,
+    sensibilidad_arrugas: int = 40,
+    metodo_inpaint: str = "telea",
     aplicar_clahe: bool = True,
-    aplicar_inpaint: bool = True,
     aplicar_bilateral: bool = True
 ) -> Tuple[Image.Image, Image.Image]:
     """
     Aplica el pipeline clásico completo de la materia:
-    1. Limpieza de ruido bilateral
-    2. Inpainting morfológico de rayones
-    3. Realce de contraste adaptativo CLAHE
+    1. Eliminación profunda de arrugas y rayones con Inpainting morfológico.
+    2. Suavizado bilateral de ruido de emulsión.
+    3. Realce de contraste adaptativo CLAHE.
     """
     resultado = pil_img.copy()
     mascara_usada = Image.new("L", pil_img.size, 0)
 
+    if eliminar_arrugas:
+        resultado, mascara_usada = remover_arrugas_e_inpainting(
+            resultado,
+            sensibilidad=sensibilidad_arrugas,
+            metodo=metodo_inpaint
+        )
+
     if aplicar_bilateral:
         resultado = filtro_bilateral_limpieza(resultado)
-
-    if aplicar_inpaint:
-        resultado, mascara_usada = inpainting_clasico(resultado)
 
     if aplicar_clahe:
         resultado = ecualizar_clahe(resultado)
