@@ -37,46 +37,49 @@ def procesar_fotografia(
     if imagen_input is None:
         raise gr.Error("Por favor, subí una fotografía o seleccioná uno de los ejemplos históricos del archivo.")
 
-    img_rgb = imagen_input.convert("RGB")
-    nota_tecnica = ""
+    try:
+        img_rgb = imagen_input.convert("RGB")
+        nota_tecnica = ""
 
-    # 1. Ejecución según el método elegido por Elena
-    if "Línea Base Clásica" in metodo:
-        restaurada, _ = pipeline_restauracion_clasica(img_rgb)
-        nota_tecnica = "Restauración determinista aplicada con técnicas clásicas de PDI (Filtro Bilateral, Inpainting Telea y CLAHE)."
-    elif "Híbrido" in metodo:
-        # Preprocesamiento clásico seguido de refinamiento por difusión
-        base, _ = pipeline_restauracion_clasica(img_rgb)
-        restaurada, detalle_dif = restaurar_con_difusion(base, intensidad=intensidad * 0.75)
-        nota_tecnica = f"Pipeline híbrido: Preprocesamiento clásico + {detalle_dif}"
-    else:
-        # Difusión directa
-        restaurada, detalle_dif = restaurar_con_difusion(img_rgb, intensidad=intensidad)
-        nota_tecnica = detalle_dif
+        # 1. Ejecución según el método elegido por Elena
+        if "Línea Base Clásica" in metodo:
+            restaurada, _ = pipeline_restauracion_clasica(img_rgb)
+            nota_tecnica = "Restauración determinista aplicada con técnicas clásicas de PDI (Filtro Bilateral, Inpainting Telea y CLAHE)."
+        elif "Híbrido" in metodo:
+            base, _ = pipeline_restauracion_clasica(img_rgb)
+            restaurada, detalle_dif = restaurar_con_difusion(base, intensidad=intensidad * 0.75)
+            nota_tecnica = f"Pipeline híbrido: Preprocesamiento clásico + {detalle_dif}"
+        else:
+            restaurada, detalle_dif = restaurar_con_difusion(img_rgb, intensidad=intensidad)
+            nota_tecnica = detalle_dif
 
-    # 2. Mapa de intervención y métricas de honestidad
-    mapa_calor, metricas = calcular_mapa_intervencion(img_rgb, restaurada)
-    informe_etico = generar_informe_honestidad_md(metricas)
+        # 2. Mapa de intervención y métricas de honestidad
+        mapa_calor, metricas = calcular_mapa_intervencion(img_rgb, restaurada)
+        informe_etico = generar_informe_honestidad_md(metricas)
 
-    # 3. Análisis semántico con VLM
-    if activar_vlm:
-        informe_vlm = informe_completo_vlm(img_rgb, restaurada, metricas)
-    else:
-        informe_vlm = (
-            "### 👁️ Análisis de Contenido y Semántica (VLM)\n"
-            "*Análisis VLM desactivado por la usuaria para procesamiento rápido.*"
+        # 3. Análisis semántico con VLM
+        if activar_vlm:
+            informe_vlm = informe_completo_vlm(img_rgb, restaurada, metricas)
+        else:
+            informe_vlm = (
+                "### 👁️ Análisis de Contenido y Semántica (VLM)\n"
+                "*Análisis VLM desactivado por la usuaria para procesamiento rápido.*"
+            )
+
+        # 4. Sello de procedencia para descarga transparente
+        imagen_archivistica = estampar_sello_archivistico(restaurada)
+
+        return (
+            restaurada,
+            mapa_calor,
+            informe_etico,
+            informe_vlm + f"\n\n**Detalle del pipeline:** {nota_tecnica}",
+            imagen_archivistica
         )
-
-    # 4. Sello de procedencia para descarga transparente
-    imagen_archivistica = estampar_sello_archivistico(restaurada)
-
-    return (
-        restaurada,
-        mapa_calor,
-        informe_etico,
-        informe_vlm + f"\n\n**Detalle del pipeline:** {nota_tecnica}",
-        imagen_archivistica
-    )
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise gr.Error(f"Aviso durante el procesamiento: {str(e)}")
 
 
 def construir_interfaz() -> gr.Blocks:
