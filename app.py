@@ -9,7 +9,6 @@ Ejecución:
 """
 
 import sys
-import os
 from typing import Tuple, Optional
 import gradio as gr
 from PIL import Image
@@ -20,7 +19,6 @@ from src.baseline import (
     ecualizar_clahe,
     filtro_bilateral_limpieza
 )
-from src.colorization import colorizar_foto_lab
 from src.diffusion import restaurar_con_difusion
 from src.honesty import (
     calcular_mapa_intervencion,
@@ -35,21 +33,20 @@ def procesar_fotografia(
     eliminar_arrugas: bool,
     sensibilidad_arrugas: int,
     metodo_inpaint: str,
-    dar_color: bool,
-    estilo_color: str,
-    saturacion_color: float,
+    proteger_identidad: bool,
     metodo_pipeline: str,
     intensidad_ia: float,
     activar_vlm: bool
 ) -> Tuple[Image.Image, Image.Image, Image.Image, str, str, Image.Image]:
     """
-    Función orquestadora principal que responde a los requerimientos de Elena:
-    1. Remoción de arrugas, pliegues y grietas de papel.
-    2. Decisión interactiva sobre dar color o preservar el blanco y negro original.
-    3. Realce generativo por difusión y auditoría de intervención.
+    Función orquestadora principal centrada en restauración histórica fiel:
+    1. Remoción quirúrgica de arrugas y fracturas físicas del papel.
+    2. Preservación estricta de la identidad facial de la persona retratada.
+    3. Realce generativo por difusión respetando la monocromía histórica.
+    4. Auditoría ética transparente y análisis semántico VLM.
     """
     if imagen_input is None:
-        raise gr.Error("Por favor, subí una fotografía o seleccioná uno de los ejemplos históricos del archivo.")
+        raise gr.Error("Por favor, subí una fotografía antigua escaneada para comenzar.")
 
     try:
         img_rgb = imagen_input.convert("RGB")
@@ -57,16 +54,16 @@ def procesar_fotografia(
         mascara_arrugas = Image.new("L", img_rgb.size, 0)
         pasos_aplicados = []
 
-        # 1. Remoción profunda de arrugas y grietas (Inpainting)
+        # 1. Remoción quirúrgica de arrugas y grietas (Inpainting con blindaje ocular)
         if eliminar_arrugas:
             resultado, mascara_arrugas = remover_arrugas_e_inpainting(
                 resultado,
                 sensibilidad=sensibilidad_arrugas,
                 metodo=metodo_inpaint
             )
-            pasos_aplicados.append(f"Inpainting de arrugas ({metodo_inpaint.upper()}, sensibilidad {sensibilidad_arrugas})")
+            pasos_aplicados.append(f"Inpainting de arrugas ({metodo_inpaint.upper()}, sens. {sensibilidad_arrugas})")
 
-        # 2. Suavizado bilateral y CLAHE
+        # 2. Suavizado bilateral leve y CLAHE suave de luminancia
         resultado = filtro_bilateral_limpieza(resultado)
         resultado = ecualizar_clahe(resultado)
         pasos_aplicados.append("Filtrado bilateral + CLAHE de contraste")
@@ -74,15 +71,16 @@ def procesar_fotografia(
         # 3. Realce por Difusión (si fue seleccionado)
         detalle_difusion = "Sin difusión generativa adicional."
         if "Difusión" in metodo_pipeline:
-            resultado, detalle_difusion = restaurar_con_difusion(resultado, intensidad=intensidad_ia)
+            resultado, detalle_difusion = restaurar_con_difusion(
+                resultado,
+                intensidad=intensidad_ia,
+                proteger_identidad=proteger_identidad
+            )
             pasos_aplicados.append(f"Difusión ({detalle_difusion})")
 
-        # 4. Colorización (según decisión de Elena)
-        if dar_color and estilo_color != "monocromo":
-            resultado = colorizar_foto_lab(resultado, estilo=estilo_color, saturacion=saturacion_color)
-            pasos_aplicados.append(f"Colorización asistida (estilo '{estilo_color}', saturación {int(saturacion_color*100)}%)")
-        else:
-            pasos_aplicados.append("Preservación de blanco y negro / escala de grises original")
+        # 4. Asegurar preservación de la monocromía histórica original
+        # En retratos de archivo, la luminancia es el dato real y se evita inventar tintes artificiales
+        pasos_aplicados.append("Preservación de blanco y negro documental histórico")
 
         # 5. Auditoría ética y mapa residual
         mapa_calor, metricas = calcular_mapa_intervencion(img_rgb, resultado, mascara_arrugas=mascara_arrugas)
@@ -130,17 +128,17 @@ def construir_interfaz() -> gr.Blocks:
 
             ---
             > ⚖️ **Aviso de Transparencia Archivística (HAI):**  
-            > *La información deteriorada o ausente no se "descubre", sino que se **reconstruye de forma verosímil**. Todo color agregado y micro-textura sintetizada por el modelo es una **inferencia probabilística** y no debe utilizarse como evidencia documental histórica.*
+            > *La información deteriorada o ausente no se "descubre", sino que se **reconstruye de forma verosímil**. Todo detalle sintetizado por el modelo es una **inferencia probabilística** y debe verificarse antes de utilizarse con fines historiográficos.*
             """
         )
 
         with gr.Row():
-            # Columna izquierda: Controles y Parámetros
+            # Columna izquierda: Entrada y Controles
             with gr.Column(scale=1):
                 gr.Markdown("### 📥 1. Fotografía de Archivo")
                 entrada_img = gr.Image(
                     type="pil",
-                    label="Subir foto escaneada o seleccionar ejemplo",
+                    label="Subir foto escaneada a restaurar",
                     sources=["upload", "clipboard"]
                 )
 
@@ -149,49 +147,30 @@ def construir_interfaz() -> gr.Blocks:
                     check_arrugas = gr.Checkbox(
                         label="Eliminar arrugas, pliegues y grietas físicas",
                         value=True,
-                        info="Aplica morfología multiescala e Inpainting para borrar grietas sin alterar rostros sanos."
+                        info="Aplica morfología multiescala e Inpainting Telea para borrar grietas sin alterar ojos ni fisonomía."
                     )
                     slider_sensibilidad_arrugas = gr.Slider(
                         minimum=15,
                         maximum=65,
-                        value=40,
+                        value=45,
                         step=5,
                         label="Sensibilidad de detección de grietas",
-                        info="Valores más altos detectan fisuras más finas."
+                        info="Valores recomendados: 40-50 para pliegues y fisuras de emulsión."
                     )
                     radio_inpaint = gr.Radio(
                         choices=["telea", "ns"],
                         value="telea",
                         label="Algoritmo de Inpainting",
-                        info="Telea (Marcha Rápida) o Navier-Stokes (Fluidos)"
+                        info="Telea (Marcha Rápida) recomendado por su estabilidad."
                     )
 
-                # Acordeón de Colorización
-                with gr.Accordion("🎨 Colorización y Crominancia (L*a*b*)", open=True):
-                    check_color = gr.Checkbox(
-                        label="Darle color a la fotografía",
+                # Acordeón de Preservación Facial y Difusión
+                with gr.Accordion("👤 Preservación Facial y Realce Generativo", open=True):
+                    check_proteger_identidad = gr.Checkbox(
+                        label="Preservar estrictamente la identidad del rostro",
                         value=True,
-                        info="Sintetiza canales a* y b* preservando la luminosidad original L*."
+                        info="Evita que la IA modifique las facciones, mirada o expresión de la persona retratada."
                     )
-                    radio_estilo_color = gr.Radio(
-                        choices=[
-                            ("Color Realista (Piel, Ropa y Ambiente)", "realista"),
-                            ("Tonalidad Sepia de Época", "sepia"),
-                            ("Preservar Blanco y Negro Original", "monocromo")
-                        ],
-                        value="realista",
-                        label="Paleta Cromática"
-                    )
-                    slider_saturacion = gr.Slider(
-                        minimum=0.2,
-                        maximum=1.0,
-                        value=0.75,
-                        step=0.05,
-                        label="Intensidad del Color"
-                    )
-
-                # Acordeón de Difusión y Análisis
-                with gr.Accordion("⚙️ Opciones Avanzadas (Difusión y VLM)", open=False):
                     radio_metodo_pipeline = gr.Radio(
                         choices=[
                             "Pipeline Híbrido (PDI + Difusión)",
@@ -202,45 +181,19 @@ def construir_interfaz() -> gr.Blocks:
                         label="Método del Pipeline"
                     )
                     slider_intensidad_ia = gr.Slider(
-                        minimum=0.15,
-                        maximum=0.70,
-                        value=0.35,
+                        minimum=0.10,
+                        maximum=0.45,
+                        value=0.25,
                         step=0.05,
-                        label="Nivel de Intervención IA (Strength)"
+                        label="Intensidad de Realce IA (Strength)",
+                        info="Valores entre 0.20 y 0.30 restauran nitidez sin deformar rostros."
                     )
                     check_vlm = gr.Checkbox(
-                        label="Ejecutar análisis semántico con VLM (SmolVLM2)",
+                        label="Ejecutar análisis visual semántico con VLM (SmolVLM2)",
                         value=True
                     )
 
                 btn_procesar = gr.Button("✨ Iniciar Restauración y Auditoría", variant="primary", size="lg")
-
-                # Ejemplos precargados
-                ejemplos_dir = "assets/ejemplos"
-                ejemplos_lista = []
-                if os.path.exists(ejemplos_dir):
-                    ejemplos_lista = [
-                        [os.path.join(ejemplos_dir, f), True, 40, "telea", True, "realista", 0.75, "Pipeline Híbrido (PDI + Difusión)", 0.35, True]
-                        for f in sorted(os.listdir(ejemplos_dir)) if f.lower().endswith((".jpg", ".png", ".jpeg")) and not f.startswith("test") and not f.startswith("resultado")
-                    ]
-
-                if ejemplos_lista:
-                    gr.Examples(
-                        examples=ejemplos_lista,
-                        inputs=[
-                            entrada_img,
-                            check_arrugas,
-                            slider_sensibilidad_arrugas,
-                            radio_inpaint,
-                            check_color,
-                            radio_estilo_color,
-                            slider_saturacion,
-                            radio_metodo_pipeline,
-                            slider_intensidad_ia,
-                            check_vlm
-                        ],
-                        label="Fotografías históricas de muestra (Archivo Barrial)"
-                    )
 
             # Columna derecha: Resultados y Auditoría
             with gr.Column(scale=1):
@@ -284,9 +237,7 @@ def construir_interfaz() -> gr.Blocks:
                 check_arrugas,
                 slider_sensibilidad_arrugas,
                 radio_inpaint,
-                check_color,
-                radio_estilo_color,
-                slider_saturacion,
+                check_proteger_identidad,
                 radio_metodo_pipeline,
                 slider_intensidad_ia,
                 check_vlm

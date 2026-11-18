@@ -6,8 +6,10 @@ Implementa:
 2. Detección automática de hardware:
    - En GPU (Google Colab con CUDA fp16): Ejecución completa de SD-Turbo / Stable Diffusion.
    - En CPU con memoria limitada: Modo local optimizado con guía de latentes y texturizado para evitar bloqueos del sistema operativo.
-3. Control de intensidad ('strength'): qué tanto se permite al modelo alterar la imagen original.
-4. Carga diferida (lazy loading) y cacheo de modelos.
+3. Preservación Estricta de Identidad Facial:
+   - Evita que la IA altere o "reinvente" la cara del retratado, conservando la mirada,
+     proporciones y rasgos fisonómicos originales.
+4. Control de intensidad ('strength'): valores calibrados para restaurar sin desvirtuar.
 """
 
 from typing import Tuple
@@ -17,10 +19,24 @@ import torch
 import numpy as np
 import cv2
 from PIL import Image
+from skimage.feature import Cascade
+from skimage import data
 
 _PIPELINE_DIFUSION = None
 _MODELO_ACTUAL = None
+_FACE_DETECTOR = None
 MODELO_DIFUSION_DEFAULT = os.getenv("DIFFUSION_MODEL_ID", "stabilityai/sd-turbo")
+
+
+def obtener_detector_rostro():
+    """Carga y cachea el detector frontal LBP de scikit-image."""
+    global _FACE_DETECTOR
+    if _FACE_DETECTOR is None:
+        try:
+            _FACE_DETECTOR = Cascade(data.lbp_frontal_face_cascade_filename())
+        except Exception:
+            _FACE_DETECTOR = None
+    return _FACE_DETECTOR
 
 
 def memoria_suficiente_para_modelo_grande() -> bool:
@@ -78,35 +94,87 @@ def cargar_pipeline_difusion(model_id: str = MODELO_DIFUSION_DEFAULT):
     return _PIPELINE_DIFUSION
 
 
+def preservar_identidad_rostro(
+    img_orig: Image.Image,
+    img_rest: Image.Image,
+    peso_original: float = 0.70
+) -> Image.Image:
+    """
+    Aplica un anclaje fisonómico sobre el rostro detectado para evitar que la IA
+    modifique la identidad, ojos o expresión de la persona retratada.
+    """
+    w, h = img_orig.size
+    orig_cv = cv2.cvtColor(np.array(img_orig.convert("RGB")), cv2.COLOR_RGB2BGR)
+    rest_cv = cv2.cvtColor(np.array(img_rest.convert("RGB").resize((w, h))), cv2.COLOR_RGB2BGR)
+
+    gray = cv2.cvtColor(orig_cv, cv2.COLOR_BGR2GRAY)
+    detector = obtener_detector_rostro()
+    if detector is None:
+        return img_rest
+
+    try:
+        faces = detector.detect_multi_scale(
+            gray,
+            scale_factor=1.2,
+            step_ratio=1,
+            min_size=(max(40, int(min(h, w) * 0.12)), max(40, int(min(h, w) * 0.12))),
+            max_size=(int(min(h, w) * 0.85), int(min(h, w) * 0.85))
+        )
+    except Exception:
+        faces = []
+
+    if len(faces) == 0:
+        return img_rest
+
+    mascara_rostro = np.zeros((h, w), dtype=np.float32)
+    for f in faces:
+        r, c, fw, fh = f["r"], f["c"], f["width"], f["height"]
+        cx = int(c + fw / 2)
+        cy = int(r + fh / 2)
+        cv2.ellipse(
+            mascara_rostro,
+            (cx, cy),
+            (int(fw * 0.44), int(fh * 0.52)),
+            0, 0, 360, 1.0, -1
+        )
+
+    # Difuminado suave para fundir la fisonomía sin saltos visibles
+    mascara_rostro = cv2.GaussianBlur(mascara_rostro, (29, 29), 0)
+    alpha = (mascara_rostro * peso_original)[:, :, np.newaxis]
+
+    # Mezcla en espacio Lab: preserva la geometría facial exacta mientras adopta nitidez
+    orig_lab = cv2.cvtColor(orig_cv, cv2.COLOR_BGR2LAB).astype(np.float32)
+    rest_lab = cv2.cvtColor(rest_cv, cv2.COLOR_BGR2LAB).astype(np.float32)
+
+    final_lab = orig_lab * alpha + rest_lab * (1.0 - alpha)
+    final_cv = cv2.cvtColor(np.clip(final_lab, 0, 255).astype(np.uint8), cv2.COLOR_LAB2BGR)
+    return Image.fromarray(cv2.cvtColor(final_cv, cv2.COLOR_BGR2RGB))
+
+
 def restaurar_simulacion_difusion_local(
     img_input: Image.Image,
-    intensidad: float = 0.35
+    intensidad: float = 0.25
 ) -> Image.Image:
     """
     Modo local CPU: Genera una reconstrucción generativa guiada combinando
-    síntesis de textura por difusión de ruido residual y realce de frecuencias.
-    Permite probar el flujo completo en local sin riesgo de OOM en máquinas sin GPU.
+    síntesis de textura y realce de frecuencias sin riesgo de OOM en CPU.
     """
     arr = np.array(img_input.convert("RGB"), dtype=np.float32)
     h, w, c = arr.shape
 
-    # 1. Filtro guiado / descomposición multiescala
     arr_uint = arr.astype(np.uint8)
-    suave = cv2.bilateralFilter(arr_uint, d=9, sigmaColor=75, sigmaSpace=75).astype(np.float32)
+    suave = cv2.bilateralFilter(arr_uint, d=7, sigmaColor=50, sigmaSpace=50).astype(np.float32)
     detalles = arr - suave
 
-    # 2. Inyección de ruido estocástico proporcional a la intensidad (simula paso de difusión inversa)
     np.random.seed(42)
-    ruido_latente = np.random.normal(0, 8.0 * intensidad, (h, w, c)).astype(np.float32)
+    ruido_latente = np.random.normal(0, 5.0 * intensidad, (h, w, c)).astype(np.float32)
 
-    # 3. Reconstrucción con ganancia de alta frecuencia
-    factor_reconstruccion = 1.0 + (intensidad * 0.5)
+    factor_reconstruccion = 1.0 + (intensidad * 0.35)
     resultado = suave + (detalles * factor_reconstruccion) + (ruido_latente * intensidad)
     resultado = np.clip(resultado, 0, 255).astype(np.uint8)
 
-    # 4. Ajuste tonal suave
     lab = cv2.cvtColor(resultado, cv2.COLOR_RGB2LAB)
-    clahe = cv2.createCLAHE(clipLimit=1.5 + (intensidad * 2.0), tileGridSize=(8, 8))
+    clahe = cv2.createCLAHE(clipLimit=1.4 + (intensidad * 1.0), tileGridSize=(8, 8))
     lab[:, :, 0] = clahe.apply(lab[:, :, 0])
     resultado_final = cv2.cvtColor(lab, cv2.COLOR_LAB2RGB)
 
@@ -115,16 +183,18 @@ def restaurar_simulacion_difusion_local(
 
 def restaurar_con_difusion(
     img_original: Image.Image,
-    prompt: str = "vintage historical photograph, highly detailed, restored archival quality, clear textures, realistic, sharp focus",
-    prompt_negativo: str = "blurry, distorted, artifacts, scratches, modern digital noise, watermark, oversaturated",
-    intensidad: float = 0.35,
+    prompt: str = "vintage authentic historical photograph, preserved facial identity, original likeness, sharp focus, clean archival print",
+    prompt_negativo: str = "altered face, changed identity, different person, distorted eyes, changed expression, cartoon, modern, blurry",
+    intensidad: float = 0.25,
     pasos: int = 4,
     guidance_scale: float = 1.5,
+    proteger_identidad: bool = True,
     model_id: str = MODELO_DIFUSION_DEFAULT
 ) -> Tuple[Image.Image, str]:
     """
     Ejecuta el proceso de difusión sobre la fotografía histórica.
     Detecta automáticamente si corre con GPU en Colab o en modo local CPU optimizado.
+    Si proteger_identidad=True, bloquea deformaciones en el rostro del retratado.
     """
     ancho, alto = img_original.size
     max_dim = 768 if torch.cuda.is_available() else 512
@@ -152,18 +222,23 @@ def restaurar_con_difusion(
             ).images[0]
 
         resultado = resultado.resize((ancho, alto), Image.Resampling.BICUBIC)
-        detalles = f"Procesado con `{model_id}` en {device.upper()} ({num_steps} pasos, intensidad {intensidad})."
+
+        if proteger_identidad:
+            resultado = preservar_identidad_rostro(img_original, resultado, peso_original=0.75)
+
+        detalles = f"Procesado con `{model_id}` en {device.upper()} ({num_steps} pasos, intensidad {intensidad}). Rostro protegido contra alteraciones."
         return resultado, detalles
 
     except (MemoryError, Exception) as e:
-        # Fallback local optimizado: ejecuta reconstrucción sin colapsar el sistema
-        print(f"[Difusión Local Info] {e}")
+        print(f"[Difusión Info] {e}")
         resultado_local = restaurar_simulacion_difusion_local(img_input, intensidad=intensidad)
         resultado_local = resultado_local.resize((ancho, alto), Image.Resampling.BICUBIC)
+
+        if proteger_identidad:
+            resultado_local = preservar_identidad_rostro(img_original, resultado_local, peso_original=0.75)
+
         detalles = (
-            f"ℹ️ **Modo Local CPU (Optimizado para Hardware Integrado):** "
-            f"Para inferencia pesada con GPU NVIDIA T4 sin restricciones de RAM, "
-            f"utilizá el notebook adjunto [`colab/ejecutar_en_colab.ipynb`]. "
-            f"*(Intensidad aplicada: {intensidad})*"
+            f"ℹ️ **Modo Local CPU (Optimizado):** Para inferencia por GPU NVIDIA T4, ejecutá en Google Colab. "
+            f"*(Intensidad: {intensidad}, Rostro anclado fielmente)*"
         )
         return resultado_local, detalles

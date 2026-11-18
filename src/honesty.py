@@ -107,22 +107,11 @@ def generar_informe_honestidad_md(metricas: Dict[str, Any]) -> str:
     pct_arrugas = metricas.get("porcentaje_arrugas_reparadas", 0.0)
     color_nuevo = metricas.get("tiene_color_nuevo", False)
 
-    # Alerta ética de colorización
-    if color_nuevo:
-        alerta_color = (
-            "> ⚠️ **Atención sobre el Color Añadido:** Se aplicó colorización sobre el documento. "
-            "El color presente en la imagen es **100% una inferencia generada por el sistema**, "
-            "no un dato registrado en la película original."
-        )
-    elif es_bn:
-        alerta_color = (
-            "> ℹ️ **Preservación Monocroma:** Se conservó la naturaleza en blanco y negro original "
-            "de la fotografía, sin inventar crominancia artificial."
-        )
-    else:
-        alerta_color = (
-            "> ℹ️ **Balance Cromático:** La foto original poseía datos de color. Se estabilizó la saturación."
-        )
+    alerta_color = (
+        "> ℹ️ **Preservación Monocroma Rigurosa:** El sistema preserva la naturaleza documental en blanco y negro "
+        "original de la fotografía histórica, garantizando que el canal de luminancia ($L^*$) sea el único protagonista "
+        "y evitando inventar coloraciones cromáticas que no cuenten con verificación documental."
+    )
 
     # Alerta sobre arrugas
     alerta_arrugas = ""

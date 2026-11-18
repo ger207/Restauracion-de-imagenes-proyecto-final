@@ -101,6 +101,11 @@ class TestPipelineRestauracion(unittest.TestCase):
         res = estampar_sello_archivistico(self.img_test)
         self.assertGreater(res.size[1], self.img_test.size[1])
 
+    def test_preservacion_identidad(self):
+        from src.diffusion import preservar_identidad_rostro
+        res = preservar_identidad_rostro(self.img_test, self.img_test)
+        self.assertEqual(res.size, self.img_test.size)
+
 
 if __name__ == "__main__":
     unittest.main()
