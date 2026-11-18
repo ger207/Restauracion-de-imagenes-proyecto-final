@@ -41,7 +41,7 @@ Para respetar el rigor documental de los archivos históricos, el sistema **pres
 
 ## 🎥 Demo en Video (5 Minutos)
 
-- **Enlace a la Video-Demo:** `[Video](https://drive.google.com/file/d/1SskzpMi4gFxG1SpCONxkG055IayAFlog/view?usp=drive_link)`.
+- **Enlace a la Video-Demo:** [Video](https://drive.google.com/file/d/1SskzpMi4gFxG1SpCONxkG055IayAFlog/view?usp=drive_link).
 - **Contenido del Video:**
   1. Presentación de Elena y el dilema del archivo barrial.
   2. Demostración en vivo del flujo completo (carga de foto dañada, remoción de arrugas y realce por difusión).
