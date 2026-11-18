@@ -81,14 +81,7 @@ def procesar_fotografia(
 
 def construir_interfaz() -> gr.Blocks:
     """Construye la interfaz de usuario con Principios de Human-AI Interaction (HAI)."""
-    
-    # CSS personalizado suave y amigable para el archivo de Elena
-    tema = gr.themes.Soft(
-        primary_hue="amber",
-        secondary_hue="stone"
-    )
-
-    with gr.Blocks(title="Restaurador de Archivos Históricos - Archivo Barrial", theme=tema) as demo:
+    with gr.Blocks(title="Restaurador de Archivos Históricos - Archivo Barrial") as demo:
         gr.Markdown(
             """
             # 🏛️ Restaurador y Analizador de Archivos Fotográficos Históricos
