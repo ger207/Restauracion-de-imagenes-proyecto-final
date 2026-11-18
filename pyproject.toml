@@ -1,0 +1,28 @@
+[project]
+name = "restauracion-fotos-antiguas"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "German Le Piani", email = "37904207@ifts24.edu.ar" }
+]
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "accelerate>=1.16.0",
+    "diffusers>=0.43.0",
+    "gradio>=6.32.0",
+    "numpy>=2.5.5",
+    "opencv-python-headless>=5.1.0.95",
+    "pillow>=13.0.0",
+    "scikit-image>=0.26.0",
+    "torch>=2.15.0",
+    "torchvision>=0.29.2",
+    "transformers>=5.23.0",
+]
+
+[project.scripts]
+restauracion-fotos-antiguas = "restauracion_fotos_antiguas:main"
+
+[build-system]
+requires = ["uv_build>=0.13.6,<0.14.0"]
+build-backend = "uv_build"

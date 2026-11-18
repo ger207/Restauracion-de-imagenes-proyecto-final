@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Entornos virtuales
+.venv/
+venv/
+ENV/
+env/
+
+# Variables de entorno y secretos
+.env
+.env.*
+*.env
+*.key
+*.token
+
+# Modelos y cachés pesados de Hugging Face y PyTorch
+.cache/
+cache/
+models/
+*.pt
+*.pth
+*.bin
+*.onnx
+*.safetensors
+*.ckpt
+
+# IDEs y editores
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Gradio y temporales
+gradio_cached_examples/
+flagged/
+.ipynb_checkpoints/
