@@ -26,6 +26,7 @@ Siguiendo las pautas de Simon Willison (2025):
 | **Descarte de Colorización (Fidelidad Monocroma)** | **Germán** | Se eliminó la colorización por generar artefactos y desvirtuar el rigor documental; se preserva el 100% del blanco y negro histórico auténtico. |
 | **Preservación Estricta de Identidad Facial** | **Germán** | Al probar en Colab con difusión, se detectó que la IA alteraba sutilmente las caras. Se implementó anclaje facial anatómico con detector LBP para congelar la fisonomía original. |
 | **Simplificación de Interfaz (Sin Muestras)** | **Germán** | Eliminación de galerías de ejemplo precargadas para un flujo de trabajo enfocado directamente en la foto que el archivista sube. |
+| **Depuración de Evaluación Abierta VLM** | **Germán** | Al probar en Colab, la generación libre en español del VLM 256M producía tautologías repetitivas. Se eliminó la cita textual libre manteniendo la verificación estructurada de objetos, consistencia y recomendaciones. |
 
 ---
 
@@ -36,3 +37,4 @@ Siguiendo las pautas de Simon Willison (2025):
 - **Iteración 4:** Pruebas con retratos dañados y optimización de memoria.
 - **Iteración 5:** Corrección de detección de arrugas por componentes conectados y blindaje LBP en ojos.
 - **Iteración 6:** Pruebas en Google Colab con GPU T4. Simplificación de la UI (remoción de muestras precargadas), eliminación de colorización para preservar fidelidad histórica monocroma, e implementación del anclaje de identidad facial en difusión para evitar deformaciones en los retratos.
+- **Iteración 7:** Depuración de la auditoría semántica VLM a solicitud de Germán, eliminando la sección de texto abierto redundante de SmolVLM2 y optimizando los tiempos de procesamiento.

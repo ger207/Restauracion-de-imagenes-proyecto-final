@@ -108,13 +108,8 @@ def informe_completo_vlm(
     """
     Construye la sección de análisis visual en lenguaje claro para Elena.
     """
-    descripcion_vlm = analizar_con_vlm(img_restaurada)
-
     return f"""
 ### 👁️ Análisis de Contenido y Semántica (VLM: SmolVLM2)
-
-**Evaluación del Modelo de Visión y Lenguaje:**
-> *"{descripcion_vlm}"*
 
 **Verificación de Objetos y Estructura:**
 - **Consistencia de Escena:** Los contornos primarios no evidencian deformaciones estructurales anómalas.

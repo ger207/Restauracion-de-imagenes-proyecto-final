@@ -106,6 +106,12 @@ class TestPipelineRestauracion(unittest.TestCase):
         res = preservar_identidad_rostro(self.img_test, self.img_test)
         self.assertEqual(res.size, self.img_test.size)
 
+    def test_informe_completo_vlm(self):
+        informe = informe_completo_vlm(self.img_test, self.img_test, {})
+        self.assertIn("Análisis de Contenido y Semántica", informe)
+        self.assertIn("Verificación de Objetos y Estructura", informe)
+        self.assertNotIn("Evaluación del Modelo de Visión y Lenguaje", informe)
+
 
 if __name__ == "__main__":
     unittest.main()
