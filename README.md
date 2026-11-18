@@ -144,8 +144,8 @@ El proyecto está configurado para ejecutarse de forma 100% reproducible con `uv
 
 ### 1. Clonar el repositorio
 ```bash
-git clone https://github.com/GermanLePiani/restauracion-fotos-antiguas.git
-cd restauracion-fotos-antiguas
+git clone https://github.com/ger207/Restauracion-de-imagenes-proyecto-final.git
+cd Restauracion-de-imagenes-proyecto-final
 ```
 
 ### 2. Instalar dependencias y ejecutar
